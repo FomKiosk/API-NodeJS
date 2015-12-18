@@ -1,0 +1,38 @@
+REQUEST GET     /products/get
+RESPONSE
+[
+    {
+        id: {int category_id},
+        name: {string category_name},
+        visible: {bool category_visible},
+        sort: {int category_sort},
+        products: [
+            {
+                id: {int product_id},
+                name: {string product_name},
+                price: {decimal product_price},
+                visible: {bool product_visible},
+                sort: {int product_sort},
+                categories_id_sub: {int product_category_extra},
+                image: {string product_image_url}
+            }
+        ]
+    }
+]
+
+REQUEST POST    /*
+POST DATA       {
+                    uid: {string kiosk_uid},
+                    secret: {string kiosk_secret}
+                }
+
+
+REQUEST POST    /products/set/[product_id]/visible
+POST DATA       {
+                    visible: {bool product_visible}
+                }
+RESPONSE
+{
+    success: {bool query_successful},
+    [error: {string query_error}]
+}
