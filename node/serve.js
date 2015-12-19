@@ -8,7 +8,7 @@ var bodyParser  = require('body-parser');
 //var io      = require("socket.io")(server);
 
 
-server.listen(config.port);
+server.listen(config.app.port);
 
 app.set("case sensitive routing", true);
 app.use(bodyParser.json());
@@ -19,31 +19,67 @@ app.use(bodyParser.urlencoded({
 // =====START=====
 //      MySQL
 // =====START=====
-var connection = mysql.createConnection({
-    host:       config.host,
-    user:       config.user,
-    password:   config.pass,
-    database:   "kassakiosk"
+var connectionAPI = mysql.createConnection({
+    host:       config.db.api.host,
+    user:       config.db.api.user,
+    password:   config.db.api.pass,
+    database:   config.db.api.database
 });
-connection.connect();
+var connectionFom = mysql.createConnection({
+    host:       config.db.fom.host,
+    user:       config.db.fom.user,
+    password:   config.db.fom.pass,
+    database:   config.db.fom.database
+});
+connectionAPI.connect();
+connectionFom.connect();
 // ======END======
 //      MySQL
 // ======END======
 
-/*io.on('connection', function(socket) {
+app.use(headerHandler);
 
-});*/
+app.post("*", postHandler);
 
-app.use(function(req, res, next) {
+app.post("/check",  routeCheck);
+
+app.post("/products/get", routeProductsGet);
+app.post("/products/set/:productId([0-9]+)/visible", routeProductsSetVisible);
+
+app.post("/categories/set/:categoryId([0-9]+)/visible", routeCategoriesSetVisible);
+
+app.post("/orders/get/open", routeOrdersGetOpen);
+app.post("/orders/get/finished", routeOrdersGetFinished);
+app.post("/orders/set/:orderId([0-9]+)/done", routeOrdersSetDone);
+app.post("/orders/create", routeOrdersCreate);
+
+app.post("/stations/get", routeStationsGet);
+
+app.post("/users/get/:barcode([0-9]+)", routeUsersGet)
+
+app.use(routeDefault);
+
+function makeRandomString() {
+    var text = "";
+    var possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+    for( var i=0; i < 16; i++ ) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+
+    return text;
+}
+
+function headerHandler(req, res, next) {
     res.header('Access-Control-Allow-Origin', "*");
     res.header('Access-Control-Allow-Methods', 'GET,POST');
     next();
-});
+}
 
-app.post("*", function(req, res, next) {
+function postHandler(req, res, next) {
     var response;
     if(typeof req.body.uid !== undefined && typeof req.body.secret !== undefined) {
-        connection.query("SELECT kiosks.secret FROM kiosks WHERE kiosks.uid = ? LIMIT 1", [req.body.uid], function(err, result) {
+        connectionAPI.query("SELECT kiosks.secret FROM kiosks WHERE kiosks.uid = ? LIMIT 1", [req.body.uid], function(err, result) {
             if(err) {
                 console.log(err);
                 response = {
@@ -74,18 +110,20 @@ app.post("*", function(req, res, next) {
         }
         res.json(response);
     }
+}
 
+function routeDefault(req, res) {
+    res.status(404).end("404 Page not found!");
+}
 
-});
-
-app.post("/check",  function(req, res) {
+function routeCheck(req, res) {
     res.json({
         success: true
     });
-});
+}
 
-app.post("/products/get", function(req, res) {
-    connection.query("SELECT categories.id, categories.name, categories.visible, categories.sort FROM categories ORDER BY categories.sort", [], function(err, result) {
+function routeProductsGet(req, res) {
+    connectionAPI.query("SELECT categories.id, categories.name, categories.visible, categories.sort FROM categories ORDER BY categories.sort", [], function(err, result) {
         var response = [];
         if(err) {
             console.log(err);
@@ -103,7 +141,7 @@ app.post("/products/get", function(req, res) {
                 });
             });
 
-            connection.query("SELECT products.id, products.name, products.price, products.visible, products.sort, products.categories_id, products.categories_id_sub FROM products WHERE products.categories_id IN (?) ORDER BY products.sort", [categoriesId], function (err, result) {
+            connectionAPI.query("SELECT products.id, products.name, products.price, products.visible, products.sort, products.categories_id, products.categories_id_sub FROM products WHERE products.categories_id IN (?) ORDER BY products.sort", [categoriesId], function (err, result) {
                 if(err) {
                     console.log(err);
                 } else {
@@ -127,16 +165,16 @@ app.post("/products/get", function(req, res) {
             });
         }
     });
-});
+}
 
-app.post("/products/set/:productId([0-9]+)/visible", function(req, res) {
+function routeProductsSetVisible(req, res) {
     var visible;
     if(req.body.visible == 1) {
         visible = 1;
     } else {
         visible = 0;
     }
-    connection.query("UPDATE products SET products.visible = ? WHERE products.id = ?", [visible, req.params.productId], function(err, result) {
+    connectionAPI.query("UPDATE products SET products.visible = ? WHERE products.id = ?", [visible, req.params.productId], function(err, result) {
         var response;
         if(err) {
             console.log(err);
@@ -151,16 +189,16 @@ app.post("/products/set/:productId([0-9]+)/visible", function(req, res) {
         }
         res.json(response);
     });
-});
+}
 
-app.post("/categories/set/:categoryId([0-9]+)/visible", function(req, res) {
+function routeCategoriesSetVisible(req, res) {
     var visible;
     if(req.body.visible == 1) {
         visible = 1;
     } else {
         visible = 0;
     }
-    connection.query("UPDATE categories SET categories.visible = ? WHERE categories.id = ?", [visible, req.params.categoryId], function(err, result) {
+    connectionAPI.query("UPDATE categories SET categories.visible = ? WHERE categories.id = ?", [visible, req.params.categoryId], function(err, result) {
         var response;
         if(err) {
             console.log(err);
@@ -175,10 +213,10 @@ app.post("/categories/set/:categoryId([0-9]+)/visible", function(req, res) {
         }
         res.json(response);
     });
-});
+}
 
-app.post("/orders/get/open", function(req, res) {
-    connection.query("SELECT orders.id, orders.date_created FROM orders WHERE orders.date_finished IS NULL ORDER BY orders.date_created", [], function(err, result) {
+function routeOrdersGetOpen(req, res) {
+    connectionAPI.query("SELECT orders.id, orders.date_created, orders.users_id FROM orders WHERE orders.date_finished IS NULL ORDER BY orders.date_created", [], function(err, result) {
         var response = [];
         if(err) {
             console.log(err);
@@ -190,11 +228,12 @@ app.post("/orders/get/open", function(req, res) {
                 response.push({
                     id: row.id,
                     date_created: row.date_created,
-                    products: []
+                    products: [],
+                    userId: row.users_id
                 });
             });
 
-            connection.query("SELECT orders_products.products_id, orders_products.amount, orders_products.products_id_sub, orders_products.orders_id FROM orders_products WHERE orders_products.orders_id IN (?)", [ordersId], function (err, result) {
+            connectionAPI.query("SELECT orders_products.products_id, orders_products.amount, orders_products.products_id_sub, orders_products.orders_id FROM orders_products WHERE orders_products.orders_id IN (?)", [ordersId], function (err, result) {
                 if(err) {
                     console.log(err);
                 } else {
@@ -214,10 +253,10 @@ app.post("/orders/get/open", function(req, res) {
             });
         }
     });
-});
+}
 
-app.post("/orders/get/finished", function(req, res) {
-    connection.query("SELECT orders.id, orders.date_created, orders.date_finished FROM orders WHERE orders.date_finished < NOW() ORDER BY orders.date_finished DESC LIMIT 8", [], function(err, result) {
+function routeOrdersGetFinished(req, res) {
+    connectionAPI.query("SELECT orders.id, orders.date_created, orders.date_finished, orders.users_id FROM orders WHERE orders.date_finished < NOW() ORDER BY orders.date_finished DESC LIMIT 8", [], function(err, result) {
         var response = [];
         if(err) {
             console.log(err);
@@ -230,11 +269,12 @@ app.post("/orders/get/finished", function(req, res) {
                     id: row.id,
                     date_created: row.date_created,
                     date_finished: row.date_finished,
-                    products: []
+                    products: [],
+                    userId: row.users_id
                 });
             });
 
-            connection.query("SELECT orders_products.products_id, orders_products.amount, orders_products.products_id_sub, orders_products.orders_id FROM orders_products WHERE orders_products.orders_id IN (?)", [ordersId], function (err, result) {
+            connectionAPI.query("SELECT orders_products.products_id, orders_products.amount, orders_products.products_id_sub, orders_products.orders_id FROM orders_products WHERE orders_products.orders_id IN (?)", [ordersId], function (err, result) {
                 if(err) {
                     console.log(err);
                 } else {
@@ -254,9 +294,9 @@ app.post("/orders/get/finished", function(req, res) {
             });
         }
     });
-});
+}
 
-app.post("/orders/set/:orderId([0-9]+)/done", function(req, res) {
+function routeOrdersSetDone(req, res) {
     var done;
     if(req.body.done == 1) {
         done = 1;
@@ -264,7 +304,7 @@ app.post("/orders/set/:orderId([0-9]+)/done", function(req, res) {
         done = 0;
     }
     if(done) {
-        connection.query("UPDATE orders SET orders.date_finished = NOW() WHERE orders.id = ?", [req.params.orderId], function(err, result) {
+        connectionAPI.query("UPDATE orders SET orders.date_finished = NOW() WHERE orders.id = ?", [req.params.orderId], function(err, result) {
             var response;
             if(err) {
                 console.log(err);
@@ -280,7 +320,7 @@ app.post("/orders/set/:orderId([0-9]+)/done", function(req, res) {
             res.json(response);
         });
     } else {
-        connection.query("UPDATE orders SET orders.date_finished = NULL WHERE orders.id = ?", [req.params.orderId], function(err, result) {
+        connectionAPI.query("UPDATE orders SET orders.date_finished = NULL WHERE orders.id = ?", [req.params.orderId], function(err, result) {
             var response;
             if(err) {
                 console.log(err);
@@ -296,11 +336,12 @@ app.post("/orders/set/:orderId([0-9]+)/done", function(req, res) {
             res.json(response);
         });
     }
-});
+}
 
-app.post("/orders/create", function(req, res) {
+function routeOrdersCreate(req, res) {
     var response;
-    connection.query("SELECT kiosks.id FROM kiosks WHERE kiosks.uid = ? LIMIT 1", [req.body.uid], function(err, result) {
+    var order = JSON.parse(req.body.order)
+    connectionAPI.query("SELECT kiosks.id FROM kiosks WHERE kiosks.uid = ? LIMIT 1", [req.body.uid], function(err, result) {
         if (err) {
             console.log(err);
             response = {
@@ -309,9 +350,10 @@ app.post("/orders/create", function(req, res) {
             };
             res.json(response);
         } else {
+            var userId = order.userId;
             var kioskId = result[0].id;
             var random = makeRandomString();
-            connection.query("INSERT INTO orders SET orders.date_created = NOW(), orders.kiosks_id = ?, orders.random = ?", [kioskId, random], function(err, result) {
+            connectionAPI.query("INSERT INTO orders SET orders.date_created = NOW(), orders.kiosks_id = ?, orders.random = ?, orders.users_id = ?", [kioskId, random, userId], function(err, result) {
                 var response;
                 if (err) {
                     console.log(err);
@@ -321,7 +363,7 @@ app.post("/orders/create", function(req, res) {
                     };
                     res.json(response);
                 } else {
-                    connection.query("SELECT orders.id FROM orders WHERE random = ?", [random], function(err, result) {
+                    connectionAPI.query("SELECT orders.id FROM orders WHERE random = ?", [random], function(err, result) {
                         if (err) {
                             console.log(err);
                             response = {
@@ -331,10 +373,10 @@ app.post("/orders/create", function(req, res) {
                             res.json(response);
                         } else {
                             var id = result[0].id;
-                            var products = JSON.parse(req.body.products);
+                            var products = order.products;
 
                             products.products.forEach(function(product) {
-                                connection.query("SELECT products.price FROM products WHERE products.id = ?", [product.id], function(err, result) {
+                                connectionAPI.query("SELECT products.price FROM products WHERE products.id = ?", [product.id], function(err, result) {
                                     if (err) {
                                         console.log(err);
                                         response = {
@@ -344,7 +386,7 @@ app.post("/orders/create", function(req, res) {
                                         res.json(response);
                                     } else {
                                         var price = result[0].price;
-                                        connection.query("INSERT INTO orders_products SET orders_products.orders_id = ?, orders_products.products_id = ?, orders_products.price = ?, orders_products.amount = ?, orders_products.products_id_sub = ?", [id, product.id, price, product.amount, product.sub], function(err, result) {
+                                        connectionAPI.query("INSERT INTO orders_products SET orders_products.orders_id = ?, orders_products.products_id = ?, orders_products.price = ?, orders_products.amount = ?, orders_products.products_id_sub = ?", [id, product.id, price, product.amount, product.sub], function(err, result) {
                                             if (err) {
                                                 console.log(err);
                                                 response = {
@@ -367,10 +409,10 @@ app.post("/orders/create", function(req, res) {
             });
         }
     });
-});
+}
 
-app.post("/stations/get", function(req, res) {
-    connection.query("SELECT stations.id, stations.name, stations.color FROM stations ORDER BY stations.name", [], function(err, result) {
+function routeStationsGet(req, res) {
+    connectionAPI.query("SELECT stations.id, stations.name, stations.color FROM stations ORDER BY stations.name", [], function(err, result) {
         var response = [];
         if(err) {
             console.log(err);
@@ -387,7 +429,7 @@ app.post("/stations/get", function(req, res) {
                 });
             });
 
-            connection.query("SELECT stations_products.products_id, stations_products.stations_id FROM stations_products WHERE stations_products.stations_id IN (?)", [stationsId], function (err, result) {
+            connectionAPI.query("SELECT stations_products.products_id, stations_products.stations_id FROM stations_products WHERE stations_products.stations_id IN (?)", [stationsId], function (err, result) {
                 if(err) {
                     console.log(err);
                 } else {
@@ -405,19 +447,94 @@ app.post("/stations/get", function(req, res) {
             });
         }
     });
-});
+}
 
-app.use(function (req, res) {
-    res.status(404).end("404 Page is choud!");
-});
+function routeUsersGet(req, res) {
+    connectionAPI.query("SELECT COUNT(users.id) AS count FROM users WHERE users.barcode = ?", [req.params.barcode], function(err, result) {
+        if(err) {
+            console.log(err);
+        } else {
+            var imageBase = "http://www.fom.be/img/";
+            var defaultImage = imageBase + "icons/default/defaultavatar.jpg";
+            var userData = {
+                id: "",
+                name: "",
+                image: "",
+                crew: 0,
+                barcode: req.params.barcode
+            };
+            if(result[0].count == 0) {
+                connectionFom.query("SELECT barcodes.crewId, barcodes.memberId, barcodes.visitorId FROM barcodes WHERE barcodes.barcodeNr = ?", [req.params.barcode], function(err, result) {
+                    if(err) {
+                        console.log(err);
+                    } else {
+                        if(result[0].crewId != null) {
+                            connectionFom.query("SELECT users.id, users.nickname, users.imageUrl FROM users WHERE users.id = ?", [result[0].crewId], function(err, result) {
+                                if(err) {
+                                    console.log(err);
+                                } else {
+                                    userData.id = "1"+result[0].id;
+                                    userData.name = result[0].nickname;
+                                    if(result[0].imageUrl.length > 0) {
+                                        userData.image = imageBase + result[0].imageUrl;
+                                    } else {
+                                        userData.image = defaultImage;
+                                    }
+                                    userData.crew = 1;
+                                    setUserData(userData);
+                                    res.json(userData);
+                                }
+                            });
+                        }
+                        if(result[0].memberId != null) {
+                            connectionFom.query("SELECT users.id, users.nickname, users.imageUrl FROM users WHERE users.id = ?", [result[0].memberId], function(err, result) {
+                                if(err) {
+                                    console.log(err);
+                                } else {
+                                    userData.id = "2"+result[0].id;
+                                    userData.name = result[0].nickname;
+                                    if(result[0].imageUrl.length > 0) {
+                                        userData.image = imageBase + result[0].imageUrl;
+                                    } else {
+                                        userData.image = defaultImage;
+                                    }
+                                    setUserData(userData);
+                                    res.json(userData);
+                                }
+                            });
+                        }
+                        if(result[0].visitorId != null) {
+                            connectionFom.query("SELECT visitors.id, visitors.firstname, visitors.lastname FROM visitors WHERE visitors.id = ?", [result[0].memberId], function(err, result) {
+                                if(err) {
+                                    console.log(err);
+                                } else {
+                                    userData.id = "3"+result[0].id;
+                                    userData.name = result[0].nickname;
+                                    userData.image = defaultImage;
+                                    setUserData(userData);
+                                    res.json(userData);
+                                }
+                            });
+                        }
+                    }
+                });
+            } else {
+                connectionAPI.query("SELECT users.id, users.name, users.image, users.crew FROM users WHERE users.barcode = ?", [req.params.barcode], function(err, result) {
+                    if(err) {
+                        console.log(err);
+                    } else {
+                        userData.id = result[0].id;
+                        userData.name = result[0].name;
+                        userData.image = result[0].image;
+                        userData.crew = result[0].crew;
+                        res.json(userData);
+                    }
+                });
+            }
+        }
+    });
+}
 
-function makeRandomString() {
-    var text = "";
-    var possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-
-    for( var i=0; i < 16; i++ ) {
-        text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-
-    return text;
+function setUserData(userdata) {
+    connectionAPI.query("INSERT INTO users SET users.id = ?, users.name = ?, users.image = ?, users.crew = ?, users.barcode = ?", [userdata.id, userdata.name, userdata.image, userdata.crew, userdata.barcode]);
 }
